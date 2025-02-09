@@ -1,13 +1,13 @@
 ﻿using System;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
-using MySql.Data.MySqlClient;  // MySQL Connector
-using BCrypt.Net;             // BCrypt for Password Hashing
+using MySql.Data.MySqlClient;
+using BCrypt.Net;
 
 namespace WindowsFormsApp1
 {
     public partial class Form1 : Form
     {
-        // Database Connection String (adjust if needed)
         private string connectionString = "Server=127.0.0.1;Database=db_project;Uid=root;Pwd=Kenneth1110@;";
 
         public Form1()
@@ -15,17 +15,28 @@ namespace WindowsFormsApp1
             InitializeComponent();
         }
 
-        // Registration Logic (To insert hashed password into the database)
+        // Password Complexity Checker
+        private bool IsPasswordComplex(string password)
+        {
+            var regex = new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$");
+            return regex.IsMatch(password);
+        }
+
+        // Registration Logic
         private void RegisterUser(string username, string password)
         {
-            // Check if the username already exists
+            if (!IsPasswordComplex(password))
+            {
+                MessageBox.Show("Password must be at least 8 characters long, include uppercase, lowercase, digit, and special character.", "Weak Password", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             using (MySqlConnection conn = new MySqlConnection(connectionString))
             {
                 try
                 {
                     conn.Open();
 
-                    // Check if the username already exists in the database
                     string checkQuery = "SELECT COUNT(*) FROM users WHERE username = @username";
                     MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn);
                     checkCmd.Parameters.AddWithValue("@username", username);
@@ -33,11 +44,10 @@ namespace WindowsFormsApp1
 
                     if (userCount > 0)
                     {
-                        MessageBox.Show("Username already exists. Please choose another username.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show("Username already exists. Please choose another.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
 
-                    // Hash the password before inserting into the database
                     string hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
 
                     string query = "INSERT INTO users (username, password) VALUES (@username, @password)";
@@ -47,13 +57,9 @@ namespace WindowsFormsApp1
 
                     int result = cmd.ExecuteNonQuery();
                     if (result > 0)
-                    {
                         MessageBox.Show("User Registered Successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
                     else
-                    {
-                        MessageBox.Show("User Registration Failed.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
+                        MessageBox.Show("Registration Failed.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 catch (Exception ex)
                 {
@@ -65,10 +71,9 @@ namespace WindowsFormsApp1
         // Login Logic
         private void button1_Click(object sender, EventArgs e)
         {
-            string username = txtUsername.Text;   // TextBox for Username
-            string password = txtPassword.Text;   // TextBox for Password
+            string username = txtUsername.Text;
+            string password = txtPassword.Text;
 
-            // Ensure username and password are provided
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
                 MessageBox.Show("Please enter both username and password.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -79,33 +84,29 @@ namespace WindowsFormsApp1
             {
                 try
                 {
-                    conn.Open();  // Open the connection to the database
+                    conn.Open();
 
-                    string query = "SELECT password FROM users WHERE username = @username";  // SQL Query to fetch the password
+                    string query = "SELECT password FROM users WHERE username = @username";
                     MySqlCommand cmd = new MySqlCommand(query, conn);
-                    cmd.Parameters.AddWithValue("@username", username);  // Adding username to the query
+                    cmd.Parameters.AddWithValue("@username", username);
 
-                    var reader = cmd.ExecuteReader();  // Execute the query
-
-                    if (reader.Read())  // If user exists
+                    var reader = cmd.ExecuteReader();
+                    if (reader.Read())
                     {
-                        string storedHashedPassword = reader.GetString("password");  // Retrieve the stored hashed password
+                        string storedHashedPassword = reader.GetString("password");
 
-                        // Debugging Output - Check what's retrieved from the database
-                        Console.WriteLine("Stored Hashed Password: " + storedHashedPassword);
-                        Console.WriteLine("Entered Password: " + password);
-
-                        // Verify password with bcrypt
                         if (BCrypt.Net.BCrypt.Verify(password, storedHashedPassword))
                         {
                             MessageBox.Show("Login Successful!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                             this.Hide();
-                            Form2 dashboard = new Form2(username); // Pass username to Dashboard
+                            Form2 dashboard = new Form2(username);
                             dashboard.Show();
+                            LogLoginHistory(username, "Successful");
                         }
                         else
                         {
                             MessageBox.Show("Invalid password.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            LogLoginHistory(username, "Failed");
                         }
                     }
                     else
@@ -120,21 +121,33 @@ namespace WindowsFormsApp1
             }
         }
 
-        // Add missing event handlers to prevent errors
-        private void label1_Click(object sender, EventArgs e) { }
-        private void label3_Click(object sender, EventArgs e) { }
-        private void textBox2_TextChanged(object sender, EventArgs e) { }
-        private void textBox4_TextChanged(object sender, EventArgs e) { }
-        private void pictureBox1_Click(object sender, EventArgs e) { }
-        private void Form1_Load(object sender, EventArgs e) { }
+        private void LogLoginHistory(string username, string status)
+        {
+            using (MySqlConnection conn = new MySqlConnection(connectionString))
+            {
+                try
+                {
+                    conn.Open();
 
-        // Call RegisterUser() function if you need to register a new user
-        
+                    string query = "INSERT INTO UserHistory (username, status, timestamp) VALUES (@username, @status, @timestamp)";
+                    MySqlCommand cmd = new MySqlCommand(query, conn);
+                    cmd.Parameters.AddWithValue("@username", username);
+                    cmd.Parameters.AddWithValue("@status", status);
+                    cmd.Parameters.AddWithValue("@timestamp", DateTime.Now);
+
+                    cmd.ExecuteNonQuery();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error logging login history: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
 
         private void button2_Click(object sender, EventArgs e)
         {
-            string username = txtUsername.Text;   // Get username from textbox
-            string password = txtPassword.Text;   // Get password from textbox
+            string username = txtUsername.Text;
+            string password = txtPassword.Text;
 
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
@@ -142,8 +155,14 @@ namespace WindowsFormsApp1
                 return;
             }
 
-            // Call RegisterUser method to insert hashed password into the database
             RegisterUser(username, password);
         }
+
+        private void label1_Click(object sender, EventArgs e) { }
+        private void label3_Click(object sender, EventArgs e) { }
+        private void textBox2_TextChanged(object sender, EventArgs e) { }
+        private void textBox4_TextChanged(object sender, EventArgs e) { }
+        private void pictureBox1_Click(object sender, EventArgs e) { }
+        private void Form1_Load(object sender, EventArgs e) { }
     }
 }
